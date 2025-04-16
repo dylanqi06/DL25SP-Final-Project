@@ -2,7 +2,9 @@ from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
 from models import MockModel
+from models import JEPA
 import glob
+from torch import nn
 
 
 def get_device():
@@ -44,11 +46,34 @@ def load_data(device):
     return probe_train_ds, probe_val_ds
 
 
-def load_model():
+def load_model(device):
     """Load or initialize the model."""
     # TODO: Replace MockModel with your trained model
-    model = MockModel()
+    model = JEPA(embedding_dim=256, action_dim=2).to(device)
+
     return model
+
+def train_model(device, model, dataloader, epochs=10):
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.MSELoss()
+
+    model.train()
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch in dataloader:
+            states = batch.states.to(device)      # [B, T, 3, 64, 64]
+            actions = batch.actions.to(device)    # [B, T-1, 2]
+
+            pred, target = model(states, actions) # [B, T-1, D]
+            loss = criterion(pred, target)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+        print(f"Epoch {epoch+1} | Loss: {total_loss / len(dataloader):.4f}")
 
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
@@ -70,10 +95,11 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
 
 if __name__ == "__main__":
     device = get_device()
-    model = load_model()
+    model = load_model(device)
     
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
     probe_train_ds, probe_val_ds = load_data(device)
+    train_model(device, model, probe_train_ds)
     evaluate_model(device, model, probe_train_ds, probe_val_ds)
