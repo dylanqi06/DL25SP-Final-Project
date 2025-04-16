@@ -45,7 +45,7 @@ class Encoder(nn.Module):
     def __init__(self, input_shape=(3, 64, 64), embedding_dim=256):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, 4, stride=2, padding=1),  # (32, 32, 32)
+            nn.Conv2d(2, 32, 4, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, 4, stride=2, padding=1),  # (64, 16, 16)
             nn.ReLU(),
