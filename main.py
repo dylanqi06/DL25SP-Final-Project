@@ -17,6 +17,13 @@ def get_device():
 def load_data(device):
     data_path = "/scratch/DL25SP"
 
+    jepa_train_ds = create_wall_dataloader(
+        data_path=f"{data_path}/train",
+        probing=False,
+        device=device,
+        train=True,
+    )
+
     probe_train_ds = create_wall_dataloader(
         data_path=f"{data_path}/probe_normal/train",
         probing=True,
@@ -43,7 +50,7 @@ def load_data(device):
         "wall": probe_val_wall_ds,
     }
 
-    return probe_train_ds, probe_val_ds
+    return jepa_train_ds, probe_train_ds, probe_val_ds
 
 
 def load_model(device):
@@ -100,6 +107,6 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
-    probe_train_ds, probe_val_ds = load_data(device)
-    train_model(device, model, probe_train_ds)
+    jepa_train_ds, probe_train_ds, probe_val_ds = load_data(device)
+    train_model(device, model, jepa_train_ds)
     evaluate_model(device, model, probe_train_ds, probe_val_ds)
