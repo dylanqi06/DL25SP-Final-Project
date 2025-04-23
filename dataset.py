@@ -17,14 +17,14 @@ class WallDataset:
         device="cuda",
     ):
         self.device = device
-        self.states = np.load(f"{data_path}/states.npy", mmap_mode="r")
-        self.actions = np.load(f"{data_path}/actions.npy")
-        # self.states = np.load(f"{data_path}/states0p01.npy", mmap_mode="r")
-        # self.actions = np.load(f"{data_path}/actions0p01.npy")
 
         if probing:
-            self.locations = np.load(f"{data_path}/locations.npy")
+            self.states = np.load(f"{data_path}\\states.npy", mmap_mode="r")
+            self.actions = np.load(f"{data_path}\\actions.npy")
+            self.locations = np.load(f"{data_path}\\locations.npy")
         else:
+            self.states = np.load(f"{data_path}\\states0p01.npy", mmap_mode="r")
+            self.actions = np.load(f"{data_path}\\actions0p01.npy")
             self.locations = None
 
     def __len__(self):

@@ -72,32 +72,53 @@ class Predictor(nn.Module):
         return self.model(x)
 
 class JEPA(nn.Module):
-    def __init__(self, embedding_dim=256, action_dim=2):
+    def __init__(self, embedding_dim=256, action_dim=2,
+                 ema_decay=0.99,
+                 var_w=1.0, cov_w=0.01, gamma=1.0):
         super().__init__()
         self.encoder = Encoder(embedding_dim=embedding_dim)
+        self.target_encoder = Encoder(embedding_dim=embedding_dim)
         self.predictor = Predictor(embedding_dim=embedding_dim, action_dim=action_dim)
+        self.ema_decay = ema_decay
+        self._initialize_target()
 
-    def forward(self, observations, actions):
-        """
-        observations: [B, T, 3, 64, 64]
-        actions:      [B, T-1, 2]
-        Returns: predicted embeddings [B, T-1, D], target embeddings [B, T-1, D]
-        """
-        B, T, C, H, W = observations.shape
-        z = self.encoder(observations.view(-1, C, H, W))     # [B*T, D]
-        z = z.view(B, T, -1)                                 # [B, T, D]
+        self.repr_dim = embedding_dim
 
-        pred_embeddings = []
+        # anti‑collapse hyper‑params
+        self.var_w, self.cov_w, self.gamma = var_w, cov_w, gamma
+        self.ema_decay = ema_decay
+        self._initialize_target()
+
+    def _initialize_target(self):
+        for param_q, param_k in zip(self.encoder.parameters(), self.target_encoder.parameters()):
+            param_k.data.copy_(param_q.data)
+            param_k.requires_grad = False  # stop gradient
+
+    def update_target(self):
+        for param_q, param_k in zip(self.encoder.parameters(), self.target_encoder.parameters()):
+            param_k.data = param_k.data * self.ema_decay + param_q.data * (1. - self.ema_decay)
+
+    def forward(self, states, actions):
+        """
+        states: [B, T, 3, 64, 64]
+        actions     : [B, T-1, 2]
+        Returns     : loss scalar, diagnostics dict
+        """
+        B, T, C, H, W = states.shape
+        z = self.encoder(states.view(-1, C, H, W)).view(B, T, -1)  # [B,T,D]
+
+        preds = []                                                        # predict zₜ | zₜ₋₁,aₜ₋₁
         for t in range(1, T):
-            z_prev = z[:, t - 1]      # [B, D]
-            a_prev = actions[:, t - 1]  # [B, 2]
-            z_pred = self.predictor(z_prev, a_prev)  # [B, D]
-            pred_embeddings.append(z_pred)
+            preds.append(self.predictor(z[:, t-1], actions[:, t-1]))
+        preds = torch.stack(preds, dim=1)                                 # [B,T-1,D]
 
-        pred_embeddings = torch.stack(pred_embeddings, dim=1)  # [B, T-1, D]
-        target_embeddings = z[:, 1:]  # [B, T-1, D]
+        with torch.no_grad():                                             # stop‑grad target
+            targets = self.target_encoder(states.view(-1, C, H, W)) \
+                        .view(B, T, -1)[:, 1:]                            # [B,T-1,D]
 
-        return pred_embeddings, target_embeddings
+        return preds, targets
+    
+   
 
 
 class Prober(torch.nn.Module):
