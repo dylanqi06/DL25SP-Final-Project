@@ -63,45 +63,45 @@ def load_model(device, input_shape):
     model.to(device)
     return model
 
-# def vicreg_loss(p, t):
-#     var_w = 1.0
-#     cov_w = 0.01
-#     gamma = 1.0
-#     B, Tm1, D = p.shape
-#     align = F.mse_loss(p, t)
-#     z = p.reshape(B * Tm1, D)
-#     std = torch.sqrt(z.var(dim=0) + 1e-4)
-#     var = torch.mean(F.relu(gamma - std))
-#     zc = z - z.mean(dim=0)
-#     cov = (zc.T @ zc) / (B * Tm1 - 1)
-#     off_diag = cov - torch.diag(torch.diag(cov))
-#     cov = (off_diag ** 2).sum() / D
-#     loss = align + var_w * var + cov_w * cov
-#     # return loss, {"align": align, "var": var, "cov": cov}
-#     return loss
-
-def vicreg_loss(p, t, var_w=1.0, cov_w=0.01, gamma=1.0):
-    """
-    Optimized VICReg loss: alignment + variance + covariance.
-    Assumes p and t are shape [B, T, D].
-    """
-    B, T, D = p.shape
-    # Alignment (mean squared error)
+def vicreg_loss(p, t):
+    var_w = 1.0
+    cov_w = 0.01
+    gamma = 1.0
+    B, Tm1, D = p.shape
     align = F.mse_loss(p, t)
-    # Flatten p to [B*T, D] for variance & covariance calculations
-    z = p.reshape(B * T, D)
-    # Variance term (fast & numerically stable)
-    std = z.std(dim=0)  # uses unbiased=False by default
+    z = p.reshape(B * Tm1, D)
+    std = torch.sqrt(z.var(dim=0) + 1e-4)
     var = torch.mean(F.relu(gamma - std))
-    # Covariance term (optional, but optimized)
     zc = z - z.mean(dim=0)
-    cov = (zc.T @ zc) / (B * T - 1)
-    # Efficiently zero-out diagonal (avoid creating full identity matrix)
-    cov_off_diag = cov.flatten()[1:].view(D - 1, D + 1)[:, :-1]
-    cov_loss = (cov_off_diag ** 2).sum() / D
-    # Total loss
-    loss = align + var_w * var + cov_w * cov_loss
+    cov = (zc.T @ zc) / (B * Tm1 - 1)
+    off_diag = cov - torch.diag(torch.diag(cov))
+    cov = (off_diag ** 2).sum() / D
+    loss = align + var_w * var + cov_w * cov
+    # return loss, {"align": align, "var": var, "cov": cov}
     return loss
+
+# def vicreg_loss(p, t, var_w=1.0, cov_w=0.01, gamma=1.0):
+#     """
+#     Optimized VICReg loss: alignment + variance + covariance.
+#     Assumes p and t are shape [B, T, D].
+#     """
+#     B, T, D = p.shape
+#     # Alignment (mean squared error)
+#     align = F.mse_loss(p, t)
+#     # Flatten p to [B*T, D] for variance & covariance calculations
+#     z = p.reshape(B * T, D)
+#     # Variance term (fast & numerically stable)
+#     std = z.std(dim=0)  # uses unbiased=False by default
+#     var = torch.mean(F.relu(gamma - std))
+#     # Covariance term (optional, but optimized)
+#     zc = z - z.mean(dim=0)
+#     cov = (zc.T @ zc) / (B * T - 1)
+#     # Efficiently zero-out diagonal (avoid creating full identity matrix)
+#     cov_off_diag = cov.flatten()[1:].view(D - 1, D + 1)[:, :-1]
+#     cov_loss = (cov_off_diag ** 2).sum() / D
+#     # Total loss
+#     loss = align + var_w * var + cov_w * cov_loss
+#     return loss
 
 def train_model(device, model, dataloader, epochs=20):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
