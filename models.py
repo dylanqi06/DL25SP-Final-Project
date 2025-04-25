@@ -136,29 +136,19 @@ class JEPA(nn.Module):
     def forward(self, states, actions):
         # states: [B, T_states, C, H, W], actions: [B, T_actions, action_dim]
         B, T_states, C, H, W = states.shape
-        # print(f"[JEPA.forward] states.shape={states.shape}, actions.shape={actions.shape}")
         flat = states.view(-1, C, H, W)   #[B*T, 2, 65, 65] 
         zs = self.encoder(flat).view(B, T_states, -1)  #[B, T, D] 
-        # print(f"[JEPA.forward] zs.shape={zs.shape}")
 
         preds = []
         if T_states > 1:
-            # print(f"[JEPA.forward] Standard forward with T_states={T_states}")
             for t in range(1, T_states):
-                # print(f"[JEPA.forward] Predicting step t={t}")
                 p = self.predictor(zs[:, t - 1], actions[:, t - 1])
                 preds.append(p)
-                # z_in = zs[:, t - 1] if self.training else zs[:, t]
-                # a_in = actions[:, t - 1] if self.training else actions[:, t]
-                # p = self.predictor(z_in, a_in)
-                # preds.append(p)
         else:
             T_actions = actions.shape[1]
-            # print(f"[JEPA.forward] Probing forward: iterative predictions with T_actions={T_actions}")
             z_prev = zs[:, 0]
             preds.append(z_prev)
             for t in range(T_actions):
-                # print(f"[JEPA.forward] Iter {t}, z_prev.shape={z_prev.shape}, action.shape={actions[:, t].shape}")
                 p = self.predictor(z_prev, actions[:, t])
                 preds.append(p)
                 z_prev = p
@@ -170,12 +160,13 @@ class JEPA(nn.Module):
         # print(f"[JEPA.forward] preds.shape={preds.shape}")
 
         with torch.no_grad():
-            # targ_z = self.target_encoder(flat).view(B, T_states, -1)[:, 1:]
-            all_z = self.target_encoder(flat).view(B, T_states, -1)
-            targ_z = all_z[:, 1:] if self.training else all_z
+            targ_z = self.target_encoder(flat).view(B, T_states, -1)[:, 1:]
         # print(f"[JEPA.forward] targ_z.shape={targ_z.shape}")
 
-        return preds, targ_z
+        if self.training:
+            return preds, targ_z
+        else:
+            return preds
 
 
 
