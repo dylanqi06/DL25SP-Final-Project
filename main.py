@@ -6,6 +6,7 @@ from models import JEPA
 import glob
 from torch import nn
 from torch.nn import functional as F
+from tqdm import tqdm
 
 
 def get_device():
@@ -87,7 +88,8 @@ def train_model(device, model, dataloader, epochs=20):
     for epoch in range(epochs):
         print(f"[DEBUG] Starting epoch {epoch + 1}")
         total_loss = 0
-        for batch in dataloader:
+        # for batch in dataloader:
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
             print("[DEBUG] Got batch")
             states = batch.states.to(device)
             actions = batch.actions.to(device)
