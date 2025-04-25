@@ -9,13 +9,13 @@ from torch.nn import functional as F
 
 def get_device():
     """Check for GPU availability."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print("Using device:", device)
     return device
 
 
 def load_data(device):
-    data_path = "/scratch/wt2244"
+    data_path = "/Users/dylanqi/Desktop/NYU/25Spring/1008/DL_data"
 
     jepa_train_ds = create_wall_dataloader(
         data_path=f"{data_path}/train",
@@ -56,7 +56,7 @@ def load_data(device):
 def load_model(device, input_shape):
     """Initialize JEPA model with dynamic input shape."""
     print(f"[load_model] input_shape={input_shape}")
-    model = JEPA(input_shape=input_shape, embedding_dim=786, action_dim=2)
+    model = JEPA(input_shape=input_shape, embedding_dim=256, action_dim=2)
     print(f"[load_model] encoder.in_channels={model.encoder.cnn[0].in_channels}")
     model.to(device)
     return model
@@ -130,5 +130,6 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
-    # train_model(device, model, jepa_train_ds)
+    train_model(device, model, jepa_train_ds)
+    model.eval() 
     evaluate_model(device, model, probe_train_ds, probe_val_ds)

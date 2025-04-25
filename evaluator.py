@@ -46,7 +46,7 @@ def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 class ProbingEvaluator:
     def __init__(
         self,
-        device: "cuda",
+        device: torch.device("mps"), 
         model: torch.nn.Module,
         probe_train_ds,
         probe_val_ds: dict,
@@ -119,14 +119,15 @@ class ProbingEvaluator:
                 # Make sure pred_encs has shape (T, BS, D) at this point
                 ################################################################################
 
+                # print('pred_encs.shape:', pred_encs.shape)
                 pred_encs = pred_encs.detach()
 
                 n_steps = pred_encs.shape[0]
                 bs = pred_encs.shape[1]
 
                 losses_list = []
-
-                target = getattr(batch, "locations").cuda()
+                device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+                target = getattr(batch, "locations").to(device)
                 target = self.normalizer.normalize_location(target)
 
                 if (
@@ -150,9 +151,12 @@ class ProbingEvaluator:
                         sampled_target_locs[i, :] = target[i, indices]
 
                     pred_encs = sampled_pred_encs
-                    target = sampled_target_locs.cuda()
+                    target = sampled_target_locs.to(device)
 
                 pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+                # print("pred_locs.shape:", pred_locs.shape)
+                # print("target.shape:", target.shape)
+
                 losses = location_losses(pred_locs, target)
                 per_probe_loss = losses.mean()
 
@@ -218,7 +222,8 @@ class ProbingEvaluator:
             # Make sure pred_encs has shape (T, BS, D) at this point
             ################################################################################
 
-            target = getattr(batch, "locations").cuda()
+            device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+            target = getattr(batch, "locations").to(device)
             target = self.normalizer.normalize_location(target)
 
             pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
