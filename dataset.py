@@ -24,8 +24,10 @@ class WallDataset:
             self.actions = np.load(f"{data_path}/actions.npy")
         else:
             self.locations = None
-            self.states = np.load(f"{data_path}/states0p01.npy", mmap_mode="r")
-            self.actions = np.load(f"{data_path}/actions0p01.npy")
+            # self.states = np.load(f"{data_path}/states0p01.npy", mmap_mode="r")
+            # self.actions = np.load(f"{data_path}/actions0p01.npy")
+            self.states = np.load(f"{data_path}/states.npy", mmap_mode="r")
+            self.actions = np.load(f"{data_path}/actions.npy")
             
     def __len__(self):
         return len(self.states)
