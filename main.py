@@ -18,6 +18,13 @@ def get_device():
 def load_data(device):
     data_path = "/scratch/DL25SP"
 
+    jepa_train_ds = create_wall_dataloader(
+        data_path=f"{data_path}/train",
+        probing=False,
+        device=device,
+        train=True,
+    )
+
     probe_train_ds = create_wall_dataloader(
         data_path=f"{data_path}/probe_normal/train",
         probing=True,
@@ -44,7 +51,7 @@ def load_data(device):
         "wall": probe_val_wall_ds,
     }
 
-    return probe_train_ds, probe_val_ds
+    return jepa_train_ds, probe_train_ds, probe_val_ds
 
 
 def load_model(device, input_shape):
