@@ -17,18 +17,32 @@ class WallDataset:
         device="cuda",
     ):
         self.device = device
-        self.states = np.load(f"{data_path}/states.npy", mmap_mode="r")
-        self.actions = np.load(f"{data_path}/actions.npy")
 
         if probing:
+            # Load raw data
+            self.states = np.load(f"{data_path}/states.npy", mmap_mode="r")
+            self.actions = np.load(f"{data_path}/actions.npy")
             self.locations = np.load(f"{data_path}/locations.npy")
+
+            # Crop initial location if locations length = actions length + 1
+            if self.locations.shape[1] == self.actions.shape[1] + 1:
+                old_shp = self.locations.shape
+                new_locs = self.locations[:, 1:]
+                print(f"[WallDataset] Cropping locations from {old_shp} to {new_locs.shape}")
+                self.locations = new_locs
+
+            # Debug shapes
+            print(f"[WallDataset] probing data shapes: states={self.states.shape}, actions={self.actions.shape}, locations={self.locations.shape}")
         else:
+            self.states = np.load(f"{data_path}/states0p01.npy", mmap_mode="r")
+            self.actions = np.load(f"{data_path}/actions0p01.npy")
             self.locations = None
 
     def __len__(self):
         return len(self.states)
 
     def __getitem__(self, i):
+        # Convert to tensors
         states = torch.from_numpy(self.states[i]).float().to(self.device)
         actions = torch.from_numpy(self.actions[i]).float().to(self.device)
 

@@ -1,9 +1,7 @@
-# main.py
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
 from models import JEPA
-import glob
 from torch import nn
 from torch.nn import functional as F
 
@@ -12,7 +10,6 @@ def get_device():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
     return device
-
 
 def load_data(device):
     data_path = "/scratch/wt2244"
@@ -52,7 +49,6 @@ def load_data(device):
 
     return jepa_train_ds, probe_train_ds, probe_val_ds
 
-
 def load_model(device, input_shape):
     """Initialize JEPA model with dynamic input shape."""
     print(f"[load_model] input_shape={input_shape}")
@@ -60,7 +56,6 @@ def load_model(device, input_shape):
     print(f"[load_model] encoder.in_channels={model.encoder.cnn[0].in_channels}")
     model.to(device)
     return model
-
 
 def vicreg_loss(p, t):
     var_w = 1.0
@@ -77,7 +72,6 @@ def vicreg_loss(p, t):
     cov = (off_diag ** 2).sum() / D
     loss = align + var_w * var + cov_w * cov
     return loss, {"align": align, "var": var, "cov": cov}
-
 
 def train_model(device, model, dataloader, epochs=20):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -98,7 +92,6 @@ def train_model(device, model, dataloader, epochs=20):
             total_loss += loss.item()
         print(f"Epoch {epoch+1} | Loss: {total_loss / len(dataloader):.4f}")
 
-
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     evaluator = ProbingEvaluator(
         device=device,
@@ -112,7 +105,6 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     avg_losses = evaluator.evaluate_all(prober=prober)
     for probe_attr, loss in avg_losses.items():
         print(f"{probe_attr} loss: {loss}")
-
 
 if __name__ == "__main__":
     device = get_device()
@@ -130,5 +122,6 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
-    # train_model(device, model, jepa_train_ds)
+    train_model(device, model, jepa_train_ds)
     evaluate_model(device, model, probe_train_ds, probe_val_ds)
+    print("training finished")
