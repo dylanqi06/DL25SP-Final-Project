@@ -83,9 +83,12 @@ def train_model(device, model, dataloader, epochs=20):
     criterion = nn.MSELoss()
 
     model.train()
+    print("[DEBUG] Entering training loop")
     for epoch in range(epochs):
+        print(f"[DEBUG] Starting epoch {epoch + 1}")
         total_loss = 0
         for batch in dataloader:
+            print("[DEBUG] Got batch")
             states = batch.states.to(device)
             actions = batch.actions.to(device)
             pred, target = model(states, actions)
