@@ -77,7 +77,8 @@ def vicreg_loss(p, t):
     off_diag = cov - torch.diag(torch.diag(cov))
     cov = (off_diag ** 2).sum() / D
     loss = align + var_w * var + cov_w * cov
-    return loss, {"align": align, "var": var, "cov": cov}
+    # return loss, {"align": align, "var": var, "cov": cov}
+    return loss
 
 def train_model(device, model, dataloader, epochs=20):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -90,11 +91,18 @@ def train_model(device, model, dataloader, epochs=20):
         total_loss = 0
         # for batch in dataloader:
         for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
-            print("[DEBUG] Got batch")
-            states = batch.states.to(device)
-            actions = batch.actions.to(device)
-            pred, target = model(states, actions)
-            loss, metrics = vicreg_loss(pred, target)
+            # states = batch.states.to(device)
+            # actions = batch.actions.to(device)
+            # pred, target = model(states, actions)
+            # loss, metrics = vicreg_loss(pred, target)
+
+            states = batch.states.to(device, non_blocking=True)
+            actions = batch.actions.to(device, non_blocking=True)
+
+            with torch.cuda.amp.autocast():
+                pred, target = model(states, actions)
+                loss = vicreg_loss(pred, target)
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
