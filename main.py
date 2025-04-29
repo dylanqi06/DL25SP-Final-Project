@@ -1,12 +1,12 @@
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
-from models import MockModel
 from models import JEPA
 import glob
 from torch import nn
 from torch.nn import functional as F
 from tqdm import tqdm
+import copy
 
 
 def get_device():
@@ -80,35 +80,41 @@ def vicreg_loss(p, t):
     return loss
 
 
-def train_model(device, model, dataloader, epochs=5):
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    criterion = nn.MSELoss()
+def train_model(device, model, dataloader, epochs=50, patience=5):
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    best_loss = float("inf")
+    patience_counter = 0
+    best_model_state = None
 
     model.train()
-    print("[DEBUG] Entering training loop")
     for epoch in range(epochs):
-        print(f"[DEBUG] Starting epoch {epoch + 1}")
         total_loss = 0
-        # for batch in dataloader:
-        for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
-            # states = batch.states.to(device)
-            # actions = batch.actions.to(device)
-            # pred, target = model(states, actions)
-            # loss, metrics = vicreg_loss(pred, target)
-
-            states = batch.states.to(device, non_blocking=True)
-            actions = batch.actions.to(device, non_blocking=True)
-
-            with torch.cuda.amp.autocast():
-                pred, target = model(states, actions)
-                loss = vicreg_loss(pred, target)
-
+        for batch in dataloader:
+            states = batch.states.to(device)
+            actions = batch.actions.to(device)
+            pred, target = model(states, actions)
+            loss, metrics = vicreg_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             model.update_target()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1} | Loss: {total_loss / len(dataloader):.4f}")
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f}")
+
+        if avg_loss < best_loss - 1e-4:
+            best_loss = avg_loss
+            best_model_state = copy.deepcopy(model.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping triggered at epoch {epoch}")
+                break
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        print("Restored best model weights based on training loss.")
 
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
@@ -137,7 +143,6 @@ if __name__ == "__main__":
     C = sample_batch.states.size(2)
     H = sample_batch.states.size(3)
     W = sample_batch.states.size(4)
-    print(f"[main] Detected state shape: {sample_batch.states.shape}")
     model = load_model(device, (C, H, W))
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
