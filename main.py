@@ -55,9 +55,7 @@ def load_data(device):
 
 def load_model(device, input_shape):
     """Initialize JEPA model with dynamic input shape."""
-    print(f"[load_model] input_shape={input_shape}")
     model = JEPA(input_shape=input_shape, embedding_dim=256, action_dim=2)
-    print(f"[load_model] encoder.in_channels={model.encoder.cnn[0].in_channels}")
     model.to(device)
     return model
 
@@ -123,7 +121,6 @@ if __name__ == "__main__":
     C = sample_batch.states.size(2)
     H = sample_batch.states.size(3)
     W = sample_batch.states.size(4)
-    print(f"[main] Detected state shape: {sample_batch.states.shape}")
 
     model = load_model(device, (C, H, W))
 
