@@ -89,7 +89,7 @@ def train_model(device, model, dataloader, epochs=50, patience=5):
     model.train()
     for epoch in range(epochs):
         total_loss = 0
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch+1}"):
             states = batch.states.to(device)
             actions = batch.actions.to(device)
             pred, target = model(states, actions)
