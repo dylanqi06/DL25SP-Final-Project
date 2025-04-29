@@ -93,7 +93,7 @@ def train_model(device, model, dataloader, epochs=50, patience=5):
             states = batch.states.to(device)
             actions = batch.actions.to(device)
             pred, target = model(states, actions)
-            loss, metrics = vicreg_loss(pred, target)
+            loss = vicreg_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
