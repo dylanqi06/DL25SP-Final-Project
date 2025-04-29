@@ -6,6 +6,7 @@ from models import JEPA
 import glob
 from torch import nn
 from torch.nn import functional as F
+import copy
 
 def get_device():
     """Check for GPU availability."""
@@ -77,9 +78,11 @@ def vicreg_loss(p, t):
     return loss, {"align": align, "var": var, "cov": cov}
 
 
-def train_model(device, model, dataloader, epochs=20):
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    criterion = nn.MSELoss()
+def train_model(device, model, dataloader, epochs=50, patience=5):
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    best_loss = float("inf")
+    patience_counter = 0
+    best_model_state = None
 
     model.train()
     for epoch in range(epochs):
@@ -91,10 +94,25 @@ def train_model(device, model, dataloader, epochs=20):
             loss, metrics = vicreg_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             model.update_target()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1} | Loss: {total_loss / len(dataloader):.4f}")
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f}")
+
+        if avg_loss < best_loss - 1e-4:
+            best_loss = avg_loss
+            best_model_state = copy.deepcopy(model.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping triggered at epoch {epoch}")
+                break
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        print("Restored best model weights based on training loss.")
 
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):

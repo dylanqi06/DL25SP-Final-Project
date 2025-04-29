@@ -2,6 +2,7 @@ from typing import List
 import numpy as np
 from torch import nn
 import torch
+import torchvision.models as models
 
 
 def build_mlp(layers_dims: List[int]):
@@ -39,27 +40,27 @@ class MockModel(torch.nn.Module):
         return torch.randn((B, T + 1, self.repr_dim), device=self.device)
 
 
-class Encoder(nn.Module):
-    """
-    Convolutional encoder that maps image frames to embeddings.
-    """
-    def __init__(self, input_shape=(2, 65, 65), embedding_dim=256):
-        super().__init__()
-        C, H, W = input_shape
-        self.cnn = nn.Sequential(
-            nn.Conv2d(C, 32, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(128 * 8 * 8, embedding_dim),
-        )
+# class Encoder(nn.Module):
+#     """
+#     Convolutional encoder that maps image frames to embeddings.
+#     """
+#     def __init__(self, input_shape=(2, 65, 65), embedding_dim=256):
+#         super().__init__()
+#         C, H, W = input_shape
+#         self.cnn = nn.Sequential(
+#             nn.Conv2d(C, 32, kernel_size=4, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.Flatten(),
+#             nn.Linear(128 * 8 * 8, embedding_dim),
+#         )
 
-    def forward(self, x):  # x: [B, C, H, W]
-        out = self.cnn(x)
-        return out
+#     def forward(self, x):  # x: [B, C, H, W]
+#         out = self.cnn(x)
+#         return out
 
 
 # class Predictor(nn.Module):
@@ -77,6 +78,39 @@ class Encoder(nn.Module):
 #     def forward(self, z, action):
 #         x = torch.cat([z, action], dim=-1)
 #         return self.model(x)
+
+class Encoder(nn.Module):
+    def __init__(self, output_dim=256):
+        super().__init__()
+        # Load pretrained ResNet18
+        resnet = models.resnet18(pretrained=True)
+        
+        # Modify first conv to accept 2 channels instead of 3
+        self.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        with torch.no_grad():
+            self.conv1.weight[:, :2] = resnet.conv1.weight[:, :2]
+        
+        # Use rest of the ResNet body (except the final fc layer)
+        self.backbone = nn.Sequential(
+            self.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1,
+            resnet.layer2,
+            resnet.layer3,
+            resnet.layer4,
+            nn.AdaptiveAvgPool2d((1,1)),
+        )
+        
+        # Project to embedding_dim
+        self.fc = nn.Linear(512, output_dim)  # 512 for ResNet18
+        
+    def forward(self, x):
+        x = self.backbone(x)  # [B, 512, 1, 1]
+        x = x.view(x.size(0), -1)  # [B, 512]
+        x = self.fc(x)  # [B, output_dim]
+        return x
 
 class Predictor(nn.Module):
     def __init__(self, embedding_dim=256, action_dim=2, num_layers=2, nhead=4, dropout=0.1):
@@ -126,11 +160,14 @@ class JEPA(nn.Module):
     ):
         super().__init__()
         C, H, W = input_shape
-        # print(f"[JEPA.__init__] input_shape={input_shape}, in_ch={C}")
-        self.encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
-        self.target_encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
+        # self.encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
+        # self.target_encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
+        self.encoder = Encoder(output_dim=embedding_dim)
+        self.target_encoder = Encoder(output_dim=embedding_dim)
         self.predictor = Predictor(embedding_dim=embedding_dim, action_dim=action_dim, num_layers=2, nhead=4, dropout=0.1)
         self.ema_decay = ema_decay
+        for p in self.encoder.parameters():
+            p.requires_grad = False
         self._initialize_target()
 
         self.repr_dim = embedding_dim
