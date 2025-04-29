@@ -46,7 +46,6 @@ class Encoder(nn.Module):
     def __init__(self, input_shape=(2, 65, 65), embedding_dim=256):
         super().__init__()
         C, H, W = input_shape
-        # print(f"[Encoder.__init__] in_ch={C}")
         self.cnn = nn.Sequential(
             nn.Conv2d(C, 32, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
@@ -59,27 +58,55 @@ class Encoder(nn.Module):
         )
 
     def forward(self, x):  # x: [B, C, H, W]
-        # print(f"[Encoder.forward] x.shape={x.shape}")
         out = self.cnn(x)
-        # print(f"[Encoder.forward] out.shape={out.shape}")
         return out
 
 
-class Predictor(nn.Module):
-    """
-    MLP that predicts next-step embeddings from current embedding + action.
-    """
-    def __init__(self, embedding_dim=256, action_dim=2):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(embedding_dim + action_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, embedding_dim),
-        )
+# class Predictor(nn.Module):
+#     """
+#     MLP that predicts next-step embeddings from current embedding + action.
+#     """
+#     def __init__(self, embedding_dim=256, action_dim=2):
+#         super().__init__()
+#         self.model = nn.Sequential(
+#             nn.Linear(embedding_dim + action_dim, 256),
+#             nn.ReLU(),
+#             nn.Linear(256, embedding_dim),
+#         )
 
-    def forward(self, z, action):
-        x = torch.cat([z, action], dim=-1)
-        return self.model(x)
+#     def forward(self, z, action):
+#         x = torch.cat([z, action], dim=-1)
+#         return self.model(x)
+
+class Predictor(nn.Module):
+    def __init__(self, embedding_dim=256, action_dim=2, num_layers=2, nhead=4, dropout=0.1):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        # self.input_dim = embedding_dim + action_dim
+        self.input_dim = 256 
+        self.input_proj = nn.Linear(embedding_dim + action_dim, self.input_dim)
+
+        self.pos_encoding = nn.Parameter(torch.randn(100, self.input_dim))  # supports up to 100 steps
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.input_dim, nhead=nhead, dim_feedforward=embedding_dim * 2, dropout=dropout
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.fc_out = nn.Linear(self.input_dim, embedding_dim)
+
+    def forward(self, z_seq, a_seq):
+        """
+        z_seq: [B, T, D]
+        a_seq: [B, T, A]
+        """
+        x = torch.cat([z_seq, a_seq], dim=-1)  # [B, T, D+A]
+        x = self.input_proj(x) 
+        x = x + self.pos_encoding[:x.size(1)]  # add position encodings
+
+        x = x.transpose(0, 1)  # transformer expects [T, B, D]
+        x = self.transformer(x)  # [T, B, D+A]
+        x = x.transpose(0, 1)  # [B, T, D+A]
+
+        return self.fc_out(x)  # [B, T, D]
 
 
 class JEPA(nn.Module):
@@ -102,7 +129,7 @@ class JEPA(nn.Module):
         # print(f"[JEPA.__init__] input_shape={input_shape}, in_ch={C}")
         self.encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
         self.target_encoder = Encoder(input_shape=input_shape, embedding_dim=embedding_dim)
-        self.predictor = Predictor(embedding_dim=embedding_dim, action_dim=action_dim)
+        self.predictor = Predictor(embedding_dim=embedding_dim, action_dim=action_dim, num_layers=2, nhead=4, dropout=0.1)
         self.ema_decay = ema_decay
         self._initialize_target()
 
@@ -130,36 +157,27 @@ class JEPA(nn.Module):
         flat = states.view(-1, C, H, W)   #[B*T, 2, 65, 65] 
         zs = self.encoder(flat).view(B, T_states, -1)  #[B, T, D] 
 
-        preds = []
         if T_states > 1:
-            for t in range(1, T_states):
-                p = self.predictor(zs[:, t - 1], actions[:, t - 1])
-                preds.append(p)
-                # z_in = zs[:, t - 1] if self.training else zs[:, t]
-                # a_in = actions[:, t - 1] if self.training else actions[:, t]
-                # p = self.predictor(z_in, a_in)
-                # preds.append(p)
+            z_in_seq = zs[:, :-1, :]      # [B, T-1, D]  # use frames 0 to T-2
+            a_in_seq = actions             # [B, T-1, A]
+
+            preds = self.predictor(z_in_seq, a_in_seq)  # [B, T-1, D]
+
+            with torch.no_grad():
+                targ_z = self.target_encoder(flat).view(B, T_states, -1)[:, 1:]  # [B, T-1, D]
+
         else:
-            T_actions = actions.shape[1]
-            # print(f"[JEPA.forward] Probing forward: iterative predictions with T_actions={T_actions}")
-            z_prev = zs[:, 0]
-            preds.append(z_prev)
+            T_actions = actions.size(1)  # 16
+            z_prev = zs[:, 0]             # [B, D]
+
+            preds = [z_prev]              # first prediction is just initial embedding
             for t in range(T_actions):
-                # print(f"[JEPA.forward] Iter {t}, z_prev.shape={z_prev.shape}, action.shape={actions[:, t].shape}")
-                p = self.predictor(z_prev, actions[:, t])
-                preds.append(p)
-                z_prev = p
+                a_t = actions[:, t]       # [B, A]
+                p = self.predictor(preds[-1].unsqueeze(1), a_t.unsqueeze(1))  # feed single timestep
+                preds.append(p.squeeze(1))  # append [B, D]
 
-        if preds:
-            preds = torch.stack(preds, dim=1)
-        else:
-            preds = torch.empty((B, 0, zs.size(-1)), device=zs.device)
-        # print(f"[JEPA.forward] preds.shape={preds.shape}")
-
-        with torch.no_grad():
-            targ_z = self.target_encoder(flat).view(B, T_states, -1)[:, 1:]
-        # print(f"[JEPA.forward] targ_z.shape={targ_z.shape}")
-
+            preds = torch.stack(preds, dim=1)  # [B, 17, D] zs.size(-1), device=zs.device)  # empty for probing mode
+            # print(f"[JEPA.forward] preds.shape={preds.shape}")
         if self.training:
             return preds, targ_z
         else:
