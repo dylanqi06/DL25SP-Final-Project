@@ -7,6 +7,10 @@ from torch import nn
 from torch.nn import functional as F
 from tqdm import tqdm
 import copy
+import sys
+import os
+import random
+import numpy as np
 
 
 def get_device():
@@ -15,6 +19,19 @@ def get_device():
     print("Using device:", device)
     return device
 
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    print(f"[Seed] Set to {seed}")
 
 def load_data(device):
     data_path = "/scratch/DL25SP"
@@ -133,9 +150,19 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     for probe_attr, loss in avg_losses.items():
         print(f"{probe_attr} loss: {loss}")
 
+def save_model(model, path="model_weights.pth"):
+    torch.save(model.state_dict(), path)
+
+def load_model_weights(model, path="model_weights.pth"):
+    if os.path.exists(path):
+        model.load_state_dict(torch.load(path, map_location=device))
+        print(f"Loaded model weights from {path}")
+    else:
+        raise FileNotFoundError(f"No model weights found at {path}")
 
 if __name__ == "__main__":
     device = get_device()
+    set_seed()
     jepa_train_ds, probe_train_ds, probe_val_ds = load_data(device)
 
     # Inspect a batch to get channel and spatial dimensions
@@ -148,6 +175,11 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
-    train_model(device, model, jepa_train_ds)
+    if len(sys.argv) > 1 and sys.argv[1] == "train":
+        train_model(device, model, jepa_train_ds)
+        save_model(model)
+    else:
+        load_model_weights(model)
+
     model.eval() 
     evaluate_model(device, model, probe_train_ds, probe_val_ds)
